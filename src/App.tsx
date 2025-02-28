@@ -654,7 +654,7 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
 
             {/* Tabs */}
             <div className="flex w-full border-b border-gray-200 mb-4">
-              {vacationPeriods.map((period, index) => (
+              {vacationPeriods.map((_, index) => (
                 <button
                   key={index}
                   className={`py-2 px-4 font-medium flex-1 text-center ${
