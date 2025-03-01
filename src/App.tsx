@@ -1,3 +1,8 @@
+import React, { useState } from 'react';
+import Holidays from 'date-holidays';
+
+const hd = new Holidays();
+
 interface CardProps {
   children: React.ReactNode;
   className?: string;
@@ -7,12 +12,12 @@ const Card: React.FC<CardProps> = ({ children, className = '' }) => (
   <div className={`bg-white rounded-lg shadow-md ${className}`}>
     {children}
   </div>
-);import React, { useState } from 'react';
+);
 
 // Define interfaces for type safety
 interface FormData {
+  workCountry: string;
   workState: string;
-  workCity: string;
   vacationDays: number;
   divideInto: number;
   mainPeriodMinDays: number;
@@ -32,7 +37,7 @@ interface VacationPeriod {
 
 interface SelectOption {
   value: string;
-  label: string;
+  label: string | undefined;
 }
 
 interface WarningMessageProps {
@@ -164,8 +169,8 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
 
   // Form state
   const [formData, setFormData] = useState<FormData>({
+    workCountry: 'BR',
     workState: '',
-    workCity: '',
     vacationDays: 30,
     divideInto: 3,
     mainPeriodMinDays: 14,
@@ -203,24 +208,16 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
 
   // Main calculation function
   const handleCalculate = (): void => {
-    const totalDays = formData.vacationDays;
-    const numPeriods = formData.divideInto;
-    const mainPeriodMinDays = formData.mainPeriodMinDays;
-    const otherPeriodsMinDays = formData.otherPeriodsMinDays;
-
-    // Validate constraints
-    if (mainPeriodMinDays + (numPeriods - 1) * otherPeriodsMinDays > totalDays) {
-      alert('The constraints for minimum days exceed the total vacation days. Please adjust your settings.');
-      return;
-    }
+    // Get form data
+    const { vacationDays, divideInto, mainPeriodMinDays, otherPeriodsMinDays } = formData;
 
     // Calculate how many days we have left after satisfying minimum requirements
-    const remainingDays = totalDays - mainPeriodMinDays - (numPeriods - 1) * otherPeriodsMinDays;
+    const remainingDays = vacationDays - mainPeriodMinDays - (divideInto - 1) * otherPeriodsMinDays;
 
     // Distribute remaining days evenly, with a bias towards the main period
-    const daysDistribution = Array(numPeriods).fill(0);
+    const daysDistribution = Array(divideInto).fill(0);
     daysDistribution[0] = mainPeriodMinDays;
-    for (let i = 1; i < numPeriods; i++) {
+    for (let i = 1; i < divideInto; i++) {
       daysDistribution[i] = otherPeriodsMinDays;
     }
 
@@ -228,7 +225,7 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
     let daysLeft = remainingDays;
     let i = 0;
     while (daysLeft > 0) {
-      daysDistribution[i % numPeriods] += 1;
+      daysDistribution[i % divideInto] += 1;
       daysLeft--;
       i++;
     }
@@ -239,7 +236,7 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
     // Start from the search range start date
     let currentDate = new Date(formData.startDate);
 
-    for (let i = 0; i < numPeriods; i++) {
+    for (let i = 0; i < divideInto; i++) {
       // Find the start date - a Monday would be ideal
       // We skip weekends because we only count workdays in our distribution
       while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
@@ -503,19 +500,24 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
   };
 
   // Options for select fields
-  const countryOptions: SelectOption[] = [
-    { value: '', label: 'Select country' },
-    { value: 'US', label: 'United States' },
-    { value: 'UK', label: 'United Kingdom' },
-    { value: 'CA', label: 'Canada' }
-  ];
+  const countryOptions: SelectOption[] = Object.entries(hd.getCountries())
+    .map(([code, name]) => ({
+      value: code,
+      label: name as string
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
-  const stateOptions: SelectOption[] = [
-    { value: '', label: 'Select state' },
-    { value: 'California', label: 'California' },
-    { value: 'New York', label: 'New York' },
-    { value: 'Texas', label: 'Texas' }
-  ];
+  const stateOptions: SelectOption[] = formData.workCountry
+    ? [
+        { value: '', label: undefined },
+        ...Object.entries(hd.getStates(formData.workCountry))
+          .map(([code, name]) => ({
+            value: code,
+            label: name as string
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label))
+      ]
+    : [];
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -546,8 +548,8 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
               <FormSection>
                 <SelectField
                   label="Work Country"
-                  name="workState"
-                  value={formData.workState}
+                  name="workCountry"
+                  value={formData.workCountry}
                   icon="🌎"
                   options={countryOptions}
                   tooltip="Select the country where you work"
@@ -555,8 +557,8 @@ const Tooltip: React.FC<TooltipProps> = ({ text }) => (
 
                 <SelectField
                   label="Work State"
-                  name="workCity"
-                  value={formData.workCity}
+                  name="workState"
+                  value={formData.workState}
                   icon="🏙️"
                   options={stateOptions}
                   tooltip="Select the state where you work"
