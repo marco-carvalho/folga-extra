@@ -266,32 +266,11 @@ const VacationCalculator: React.FC = () => {
     }
 
     const periods: VacationPeriod[] = [];
-    let currentDate = new Date(startDate);
-    let totalDaysAssigned = 0;
+    let currentStartDate = new Date(startDate);
 
-    for (let i = 0; i < divideInto; i++) {
-      const daysTarget =
-        i === divideInto - 1
-          ? vacationDays - totalDaysAssigned
-          : daysDistribution[i];
-
-      while (
-        currentDate.getDay() === 0 ||
-        currentDate.getDay() === 6 ||
-        isHoliday(currentDate)
-      ) {
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      const vacationStartDate = new Date(currentDate);
-
-      const vacationEndDate = new Date(vacationStartDate);
-      vacationEndDate.setDate(vacationStartDate.getDate() + daysTarget - 1);
-
-      totalDaysAssigned += daysTarget;
-
+    const calculateExtraStartDate = (vacationStartDate: Date): Date => {
       const extraStartDate = new Date(vacationStartDate);
-      let tempDate = new Date(vacationStartDate);
+      const tempDate = new Date(vacationStartDate);
       tempDate.setDate(tempDate.getDate() - 1);
 
       while (isWeekendOrHoliday(tempDate)) {
@@ -299,8 +278,12 @@ const VacationCalculator: React.FC = () => {
         tempDate.setDate(tempDate.getDate() - 1);
       }
 
+      return extraStartDate;
+    };
+
+    const calculateExtraEndDate = (vacationEndDate: Date): Date => {
       const extraEndDate = new Date(vacationEndDate);
-      tempDate = new Date(vacationEndDate);
+      const tempDate = new Date(vacationEndDate);
       tempDate.setDate(tempDate.getDate() + 1);
 
       while (isWeekendOrHoliday(tempDate)) {
@@ -308,16 +291,120 @@ const VacationCalculator: React.FC = () => {
         tempDate.setDate(tempDate.getDate() + 1);
       }
 
-      periods.push({
-        startDate: extraStartDate,
-        endDate: extraEndDate,
-        usedStartDate: vacationStartDate,
-        usedEndDate: vacationEndDate,
-        daysCount: daysTarget,
+      return extraEndDate;
+    };
+
+    const checkForOverlaps = (
+      startDate: Date,
+      endDate: Date,
+      existingPeriods: VacationPeriod[],
+      minGapBetweenPeriods: number
+    ): boolean => {
+      const bufferStartDate = new Date(startDate);
+      bufferStartDate.setDate(bufferStartDate.getDate() - minGapBetweenPeriods);
+
+      const bufferEndDate = new Date(endDate);
+      bufferEndDate.setDate(bufferEndDate.getDate() + minGapBetweenPeriods);
+
+      for (const period of existingPeriods) {
+        if (
+          (bufferStartDate <= period.endDate && bufferEndDate >= period.startDate)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const calculateTotalDaysOff = (period: VacationPeriod): number => {
+      const totalDays = Math.floor(
+        (period.endDate.getTime() - period.startDate.getTime()) / (1000 * 60 * 60 * 24)
+      ) + 1;
+
+      return totalDays;
+    };
+
+    const findBestAvailablePeriod = (
+      startDate: Date,
+      existingPeriods: VacationPeriod[],
+      daysCount: number,
+      minGapBetweenPeriods: number = 3,
+      maxDaysToCheck: number = 120
+    ): VacationPeriod => {
+      const currentDate = new Date(startDate);
+      const candidatePeriods: { period: VacationPeriod; totalDaysOff: number }[] = [];
+      const maxSearchDate = new Date(startDate);
+      maxSearchDate.setDate(maxSearchDate.getDate() + maxDaysToCheck);
+
+      while (currentDate <= maxSearchDate) {
+        if (
+          currentDate.getDay() !== 0 &&
+          currentDate.getDay() !== 6 &&
+          !isHoliday(currentDate)
+        ) {
+          const vacationStartDate = new Date(currentDate);
+          const vacationEndDate = new Date(vacationStartDate);
+          vacationEndDate.setDate(vacationStartDate.getDate() + daysCount - 1);
+
+          const extraStartDate = calculateExtraStartDate(vacationStartDate);
+          const extraEndDate = calculateExtraEndDate(vacationEndDate);
+
+          const overlaps = checkForOverlaps(
+            extraStartDate,
+            extraEndDate,
+            existingPeriods,
+            minGapBetweenPeriods
+          );
+
+          if (!overlaps) {
+            const period: VacationPeriod = {
+              startDate: extraStartDate,
+              endDate: extraEndDate,
+              usedStartDate: vacationStartDate,
+              usedEndDate: vacationEndDate,
+              daysCount: daysCount
+            };
+
+            const totalDaysOff = calculateTotalDaysOff(period);
+            candidatePeriods.push({ period, totalDaysOff });
+          }
+        }
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      if (candidatePeriods.length === 0) {
+        throw new Error("Could not find any valid vacation period within the search range");
+      }
+
+      candidatePeriods.sort((a, b) => {
+        if (b.totalDaysOff !== a.totalDaysOff) {
+          return b.totalDaysOff - a.totalDaysOff;
+        }
+
+        const diffA = Math.abs(a.period.usedStartDate.getTime() - startDate.getTime());
+        const diffB = Math.abs(b.period.usedStartDate.getTime() - startDate.getTime());
+        return diffA - diffB;
       });
 
-      currentDate = new Date(extraEndDate);
-      currentDate.setDate(currentDate.getDate() + 3);
+      return candidatePeriods[0].period;
+    };
+
+    for (let i = 0; i < divideInto; i++) {
+      const daysTarget = daysDistribution[i];
+
+      const optimalPeriod = findBestAvailablePeriod(
+        currentStartDate,
+        periods,
+        daysTarget,
+        3
+      );
+
+      periods.push(optimalPeriod);
+
+      currentStartDate = new Date(optimalPeriod.endDate);
+      currentStartDate.setDate(currentStartDate.getDate() + 120);
     }
 
     setVacationPeriods(periods);
